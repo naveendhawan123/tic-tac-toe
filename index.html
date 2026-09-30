@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Online Tic-Tac-Toe</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase JS Client via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="card">
+    <h1>Tic-Tac-Toe</h1>
+
+    <!-- 1. LOBBY SCREEN -->
+    <div id="lobby-view">
+      <button id="btn-create" class="btn primary">Create Game</button>
+      <div class="separator">OR</div>
+      <div class="join-row">
+        <input type="text" id="input-code" placeholder="GAME CODE" maxlength="6">
+        <button id="btn-join" class="btn">Join Game</button>
+      </div>
+      <p id="lobby-error" class="error-msg"></p>
+    </div>
+
+    <!-- 2. ACTIVE GAME SCREEN -->
+    <div id="game-view" style="display: none;">
+      <div class="info-banner">
+        <span>Code: <strong id="lbl-code"></strong></span>
+        <button id="btn-copy" class="btn small">Copy Invite Link</button>
+      </div>
+      <p id="copy-status" class="success-msg"></p>
+
+      <div class="role-banner">
+        <span id="lbl-role"></span>
+        <h2 id="lbl-turn">Waiting for opponent...</h2>
+      </div>
+
+      <!-- 3x3 Board -->
+      <div id="board" class="board">
+        <button class="cell" data-idx="0"></button>
+        <button class="cell" data-idx="1"></button>
+        <button class="cell" data-idx="2"></button>
+        <button class="cell" data-idx="3"></button>
+        <button class="cell" data-idx="4"></button>
+        <button class="cell" data-idx="5"></button>
+        <button class="cell" data-idx="6"></button>
+        <button class="cell" data-idx="7"></button>
+        <button class="cell" data-idx="8"></button>
+      </div>
+
+      <div class="footer-actions">
+        <button id="btn-rematch" class="btn primary" style="display: none;">Play Again</button>
+        <button id="btn-leave" class="btn secondary">Leave Game</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
