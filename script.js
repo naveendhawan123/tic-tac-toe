@@ -1,8 +1,8 @@
 // ==========================================
 // 1. SUPABASE CREDENTIALS (PASTE YOURS HERE)
 // ==========================================
-const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
-const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+const SUPABASE_URL = "https://rryztjivmxkvkfgeilwm.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_RwDTHg7TjFSppEV9NZTw6Q_1GMO1d6x";
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
