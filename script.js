@@ -4,21 +4,6 @@
 const SUPABASE_URL = "https://rryztjivmxkvkfgeilwm.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_RwDTHg7TjFSppEV9NZTw6Q_1GMO1d6x";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// ==========================================
-// 2. PLAYER PERSISTENT IDENTITY
-// ==========================================
-let playerId = localStorage.getItem("ttt_player_id");
-if (!playerId) {
-  playerId = "user_" + Math.random().toString(36).substring(2, 9);
-  localStorage.setItem("ttt_player_id", playerId);
-}
-
-// State
-let currentGame = null;
-let realtimeChannel = null;
-
 // DOM Elements
 const lobbyView = document.getElementById("lobby-view");
 const gameView = document.getElementById("game-view");
@@ -36,31 +21,62 @@ const cells = document.querySelectorAll(".cell");
 const btnRematch = document.getElementById("btn-rematch");
 const btnLeave = document.getElementById("btn-leave");
 
+// Initialize Supabase client avoiding variable collision
+let supabaseClient = null;
+
+if (!SUPABASE_URL || SUPABASE_URL.includes("YOUR_SUPABASE") || !SUPABASE_URL.startsWith("https://")) {
+  lobbyError.innerHTML = "Configuration error: Enter a valid <code>SUPABASE_URL</code> in <code>script.js</code>.";
+} else if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes("YOUR_SUPABASE")) {
+  lobbyError.innerHTML = "Configuration error: Enter your <code>SUPABASE_ANON_KEY</code> in <code>script.js</code>.";
+} else if (!window.supabase) {
+  lobbyError.textContent = "Supabase CDN failed to load. Check your network connection.";
+} else {
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  } catch (err) {
+    lobbyError.textContent = "Initialization failed: " + err.message;
+  }
+}
+
+// Persistent Player Identity
+let playerId = localStorage.getItem("ttt_player_id");
+if (!playerId) {
+  playerId = "user_" + Math.random().toString(36).substring(2, 9);
+  localStorage.setItem("ttt_player_id", playerId);
+}
+
+// State
+let currentGame = null;
+let realtimeChannel = null;
+
 const WIN_COMBOS = [
   [0, 1, 2], [3, 4, 5], [6, 7, 8],
   [0, 3, 6], [1, 4, 7], [2, 5, 8],
   [0, 4, 8], [2, 4, 6]
 ];
 
-// ==========================================
-// 3. AUTO-JOIN VIA INVITE LINK
-// ==========================================
+// Auto-join via invite link on page load
 window.addEventListener("DOMContentLoaded", () => {
   const params = new URLSearchParams(window.location.search);
   const codeParam = params.get("game");
-  if (codeParam) {
+  if (codeParam && supabaseClient) {
     const cleanCode = codeParam.trim().toUpperCase();
     inputCode.value = cleanCode;
     joinGame(cleanCode);
   }
 });
 
-// ==========================================
-// 4. EVENT LISTENERS
-// ==========================================
-btnCreate.addEventListener("click", createGame);
+// Event Listeners
+btnCreate.addEventListener("click", () => {
+  if (!supabaseClient) {
+    lobbyError.textContent = "Database client not ready. Check your Supabase URL & Key.";
+    return;
+  }
+  createGame();
+});
 
 btnJoin.addEventListener("click", () => {
+  if (!supabaseClient) return;
   const code = inputCode.value.trim().toUpperCase();
   if (!code) {
     lobbyError.textContent = "Please enter a 6-character code.";
@@ -87,88 +103,102 @@ cells.forEach(cell => {
 btnRematch.addEventListener("click", requestRematch);
 btnLeave.addEventListener("click", leaveGame);
 
-// ==========================================
-// 5. GAME ACTIONS
-// ==========================================
-
-// Create a new room
+// 1. Create Game
 async function createGame() {
-  lobbyError.textContent = "";
+  lobbyError.textContent = "Creating game...";
+  btnCreate.disabled = true;
+
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-  const { data, error } = await supabase
-    .from("games")
-    .insert([{
-      id: code,
-      player_x: playerId,
-      player_o: null,
-      board: ["", "", "", "", "", "", "", "", ""],
-      turn: "X",
-      status: "waiting",
-      winner: null
-    }])
-    .select()
-    .single();
-
-  if (error) {
-    lobbyError.textContent = "Could not create game. Check Supabase keys.";
-    console.error(error);
-    return;
-  }
-
-  enterGame(data);
-}
-
-// Join an existing room
-async function joinGame(code) {
-  lobbyError.textContent = "";
-
-  const { data: game, error } = await supabase
-    .from("games")
-    .select()
-    .eq("id", code)
-    .single();
-
-  if (error || !game) {
-    lobbyError.textContent = "Game not found. Check code or create new.";
-    return;
-  }
-
-  // If Player O slot is free, join as Player O
-  if (!game.player_o && game.player_x !== playerId) {
-    const { data: updated, error: updateError } = await supabase
+  try {
+    const { data, error } = await supabaseClient
       .from("games")
-      .update({
-        player_o: playerId,
-        status: "playing"
-      })
-      .eq("id", code)
+      .insert([{
+        id: code,
+        player_x: playerId,
+        player_o: null,
+        board: ["", "", "", "", "", "", "", "", ""],
+        turn: "X",
+        status: "waiting",
+        winner: null
+      }])
       .select()
       .single();
 
-    if (updateError) {
-      lobbyError.textContent = "Could not join game.";
+    btnCreate.disabled = false;
+
+    if (error) {
+      lobbyError.textContent = "Database error: " + error.message;
+      console.error(error);
       return;
     }
-    enterGame(updated);
-  } else {
-    // Check if the user is already player_x or player_o
-    if (game.player_x !== playerId && game.player_o !== playerId) {
-      lobbyError.textContent = "This game already has 2 players.";
-      return;
-    }
-    enterGame(game);
+
+    lobbyError.textContent = "";
+    enterGame(data);
+  } catch (err) {
+    btnCreate.disabled = false;
+    lobbyError.textContent = "Unexpected error: " + err.message;
+    console.error(err);
   }
 }
 
-// Switch UI and subscribe to Realtime
+// 2. Join Game
+async function joinGame(code) {
+  lobbyError.textContent = "Joining game...";
+  btnJoin.disabled = true;
+
+  try {
+    const { data: game, error } = await supabaseClient
+      .from("games")
+      .select()
+      .eq("id", code)
+      .single();
+
+    btnJoin.disabled = false;
+
+    if (error || !game) {
+      lobbyError.textContent = "Game code not found. Please verify the code.";
+      return;
+    }
+
+    if (!game.player_o && game.player_x !== playerId) {
+      const { data: updated, error: updateError } = await supabaseClient
+        .from("games")
+        .update({
+          player_o: playerId,
+          status: "playing"
+        })
+        .eq("id", code)
+        .select()
+        .single();
+
+      if (updateError) {
+        lobbyError.textContent = "Failed to join: " + updateError.message;
+        return;
+      }
+      lobbyError.textContent = "";
+      enterGame(updated);
+    } else {
+      if (game.player_x !== playerId && game.player_o !== playerId) {
+        lobbyError.textContent = "This game room is already full.";
+        return;
+      }
+      lobbyError.textContent = "";
+      enterGame(game);
+    }
+  } catch (err) {
+    btnJoin.disabled = false;
+    lobbyError.textContent = "Network error: " + err.message;
+  }
+}
+
+// 3. Enter Game & Setup View
 function enterGame(game) {
   currentGame = game;
   lobbyView.style.display = "none";
   gameView.style.display = "block";
   lblCode.textContent = game.id;
 
-  // Add game code to URL bar without refreshing
   const url = new URL(window.location);
   url.searchParams.set("game", game.id);
   window.history.pushState({}, "", url);
@@ -177,13 +207,13 @@ function enterGame(game) {
   subscribeRealtime(game.id);
 }
 
-// Subscribe to Supabase Realtime changes on this specific game row
+// 4. Realtime Subscription
 function subscribeRealtime(code) {
   if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel);
+    supabaseClient.removeChannel(realtimeChannel);
   }
 
-  realtimeChannel = supabase
+  realtimeChannel = supabaseClient
     .channel(`game-${code}`)
     .on(
       "postgres_changes",
@@ -201,7 +231,7 @@ function subscribeRealtime(code) {
     .subscribe();
 }
 
-// Render game state to the screen
+// 5. Render Board & State
 function render(game) {
   const isX = game.player_x === playerId;
   const isO = game.player_o === playerId;
@@ -209,9 +239,8 @@ function render(game) {
 
   lblRole.textContent = mySymbol
     ? `You are Player: ${mySymbol}`
-    : `You are Spectating`;
+    : `Spectating`;
 
-  // Render board cells
   cells.forEach((cell, idx) => {
     cell.textContent = game.board[idx];
     const isOccupied = game.board[idx] !== "";
@@ -219,48 +248,34 @@ function render(game) {
     cell.disabled = isOccupied || !isMyTurn;
   });
 
-  // Render status & buttons
   if (game.status === "waiting") {
     lblTurn.textContent = "Waiting for Player 2...";
     btnRematch.style.display = "none";
   } else if (game.status === "playing") {
     btnRematch.style.display = "none";
-    if (game.turn === mySymbol) {
-      lblTurn.textContent = "Your turn!";
-    } else {
-      lblTurn.textContent = `Player ${game.turn}'s turn...`;
-    }
+    lblTurn.textContent = game.turn === mySymbol ? "Your turn!" : `Player ${game.turn}'s turn...`;
   } else if (game.status === "won") {
     btnRematch.style.display = "inline-block";
-    if (game.winner === mySymbol) {
-      lblTurn.textContent = "You won!";
-    } else {
-      lblTurn.textContent = `Player ${game.winner} won!`;
-    }
+    lblTurn.textContent = game.winner === mySymbol ? "You won!" : `Player ${game.winner} won!`;
   } else if (game.status === "draw") {
     btnRematch.style.display = "inline-block";
     lblTurn.textContent = "It's a draw!";
   }
 }
 
-// Make a move
+// 6. Handle Clicks / Moves
 async function handleCellClick(index) {
   const isX = currentGame.player_x === playerId;
   const isO = currentGame.player_o === playerId;
   const mySymbol = isX ? "X" : isO ? "O" : null;
 
-  if (!mySymbol || currentGame.status !== "playing" || currentGame.turn !== mySymbol) {
-    return;
-  }
-
-  if (currentGame.board[index] !== "") {
+  if (!mySymbol || currentGame.status !== "playing" || currentGame.turn !== mySymbol || currentGame.board[index] !== "") {
     return;
   }
 
   const updatedBoard = [...currentGame.board];
   updatedBoard[index] = mySymbol;
 
-  // Check victory / draw
   const winner = checkWinner(updatedBoard);
   const isDraw = !winner && updatedBoard.every(sq => sq !== "");
 
@@ -275,8 +290,7 @@ async function handleCellClick(index) {
     nextStatus = "draw";
   }
 
-  // Update in Supabase
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from("games")
     .update({
       board: updatedBoard,
@@ -296,16 +310,14 @@ async function handleCellClick(index) {
 
 function checkWinner(b) {
   for (const [x, y, z] of WIN_COMBOS) {
-    if (b[x] && b[x] === b[y] && b[x] === b[z]) {
-      return b[x];
-    }
+    if (b[x] && b[x] === b[y] && b[x] === b[z]) return b[x];
   }
   return null;
 }
 
-// Play Again (Reset board)
+// 7. Rematch
 async function requestRematch() {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseClient
     .from("games")
     .update({
       board: ["", "", "", "", "", "", "", "", ""],
@@ -323,15 +335,14 @@ async function requestRematch() {
   }
 }
 
-// Leave game and return to lobby
+// 8. Leave Game
 function leaveGame() {
   if (realtimeChannel) {
-    supabase.removeChannel(realtimeChannel);
+    supabaseClient.removeChannel(realtimeChannel);
     realtimeChannel = null;
   }
   currentGame = null;
 
-  // Clean URL
   const url = new URL(window.location);
   url.searchParams.delete("game");
   window.history.pushState({}, "", url);
